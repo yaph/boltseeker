@@ -8,35 +8,77 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+# Dilation kernel used to merge nearby changed pixels into coherent blobs.
+_DILATION_KERNEL = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+
+
+def _blob_qualifies(
+    contour: np.ndarray,
+    gray: np.ndarray,
+    min_blob_area: int,
+    luminance_threshold: int,
+) -> bool:
+    """Return True if a contour meets the area and luminance criteria.
+
+    Args:
+        contour: OpenCV contour array.
+        gray: Grayscale frame the contour was extracted from.
+        min_blob_area: Minimum contour area in pixels.
+        luminance_threshold: Minimum mean luminance within the contour mask.
+
+    Returns:
+        True if the blob qualifies as a potential lightning region.
+    """
+    if cv2.contourArea(contour) < min_blob_area:
+        return False
+    mask = np.zeros(gray.shape, dtype=np.uint8)
+    cv2.drawContours(mask, [contour], -1, 255, cv2.FILLED)
+    region_mean = float(cv2.mean(gray, mask=mask)[0])
+    return region_mean >= luminance_threshold
+
 
 def detect_lightning(
     video_path: Path,
-    brightness_threshold: int,
-    pixel_ratio: float,
+    diff_threshold: int,
+    min_blob_area: int,
+    luminance_threshold: int,
 ) -> tuple[list[int], int, float]:
-    """Detect frames with lightning using the bright pixel ratio method.
+    """Detect lightning frames using frame differencing, blob detection, and luminance.
 
-    A frame is flagged when the fraction of pixels exceeding brightness_threshold
-    is greater than pixel_ratio. This requires a meaningful area of bright pixels,
-    which distinguishes a lightning bolt (large illuminated sky region) from
-    small persistent light sources such as house lights or street lamps.
+    For each consecutive frame pair, an absolute difference image is computed and
+    thresholded. The resulting binary mask is cleaned up with morphological dilation
+    to merge nearby changed pixels, then contours are extracted. A frame is flagged
+    when at least one contour (blob) meets both of the following conditions:
+    - Its area exceeds min_blob_area (large coherent change, not noise or raindrops).
+    - The mean luminance of the current frame within the contour mask exceeds
+      luminance_threshold (the changed region is bright, not just dark cloud movement).
 
     Args:
         video_path: Path to the input video file.
-        brightness_threshold: Minimum luminance value (0-254) to count a pixel as bright.
-        pixel_ratio: Minimum fraction of bright pixels required to flag a frame.
+        diff_threshold: Minimum per-pixel absolute difference (0-254) to count as
+            changed. Higher values ignore gradual changes like slow cloud movement.
+        min_blob_area: Minimum area in pixels of a connected changed region to
+            consider. Filters out small transient changes like raindrops or noise.
+        luminance_threshold: Minimum mean luminance (0-254) within the contour mask
+            in the current frame. Filters out dark blobs caused by cloud movement.
 
     Returns:
-        Tuple of (hit_frames, total_frames, fps).
+        Tuple of (hit_frames, actual_frame_count, fps).
     """
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         print(f"Error: cannot open video file '{video_path}'", file=sys.stderr)
         sys.exit(1)
 
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     fps = cap.get(cv2.CAP_PROP_FPS)
+    if fps <= 0:
+        print("Warning: could not determine frame rate; timestamps will show 0.00s.",
+              file=sys.stderr)
+        fps = 0.0
+
     hit_frames: list[int] = []
+    frame_count = 0
+    prev_gray: np.ndarray | None = None
 
     while True:
         ret, frame = cap.read()
@@ -44,19 +86,30 @@ def detect_lightning(
             break
 
         frame_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+        frame_count += 1
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        ratio = float(np.sum(gray > brightness_threshold) / gray.size)
 
-        if ratio > pixel_ratio:
-            hit_frames.append(frame_idx)
-            timestamp = frame_idx / fps
-            print(
-                f"  Frame {frame_idx:6d} ({timestamp:7.2f}s) — "
-                f"bright pixel ratio: {ratio:.4f}"
+        if prev_gray is not None:
+            diff = cv2.absdiff(gray, prev_gray)
+            _, thresh = cv2.threshold(diff, diff_threshold, 255, cv2.THRESH_BINARY)
+            dilated = cv2.dilate(thresh, _DILATION_KERNEL, iterations=2)
+            contours, _ = cv2.findContours(
+                dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
 
+            if any(_blob_qualifies(c, gray, min_blob_area, luminance_threshold)
+                   for c in contours):
+                hit_frames.append(frame_idx)
+                if fps > 0:
+                    timestamp = f"{frame_idx / fps:7.2f}s"
+                else:
+                    timestamp = "    n/a"
+                print(f"  Frame {frame_idx:6d} ({timestamp})")
+
+        prev_gray = gray
+
     cap.release()
-    return hit_frames, total_frames, fps
+    return hit_frames, frame_count, fps
 
 
 def save_frames(
@@ -130,20 +183,29 @@ def main() -> None:
         help="Directory to save extracted frames.",
     )
     parser.add_argument(
-        "-b",
-        "--brightness-threshold",
+        "-d",
+        "--diff-threshold",
         type=int,
-        default=180,
-        help="Pixel luminance value (0-254) above which a pixel counts as bright. "
-             "Lower this to catch dimmer bolts.",
+        default=25,
+        help="Minimum per-pixel absolute difference (0-254) between consecutive frames "
+             "to count a pixel as changed. Raise this to ignore gradual changes "
+             "like slow cloud movement or rain.",
     )
     parser.add_argument(
-        "-r",
-        "--pixel-ratio",
-        type=float,
-        default=0.005,
-        help="Minimum fraction of bright pixels (0.0-1.0) required to flag a frame. "
-             "Raise this if persistent light sources cause false positives.",
+        "-a",
+        "--min-blob-area",
+        type=int,
+        default=500,
+        help="Minimum area in pixels of a connected changed region to consider. "
+             "Raise this to filter out small transient changes like raindrops or noise.",
+    )
+    parser.add_argument(
+        "-l",
+        "--luminance-threshold",
+        type=int,
+        default=80,
+        help="Minimum mean luminance (0-254) within a blob's contour mask in the "
+             "current frame. Filters out dark blobs caused by cloud or rain movement.",
     )
     parser.add_argument(
         "-p",
@@ -162,23 +224,28 @@ def main() -> None:
 
     if not args.video.is_file():
         parser.error(f"file not found: '{args.video}'")
-    if not (0 <= args.brightness_threshold <= 254):
-        parser.error("--brightness-threshold must be between 0 and 254")
-    if not (0.0 < args.pixel_ratio <= 1.0):
-        parser.error("--pixel-ratio must be between 0.0 (exclusive) and 1.0")
+    if not (0 <= args.diff_threshold <= 254):
+        parser.error("--diff-threshold must be between 0 and 254")
+    if args.min_blob_area < 1:
+        parser.error("--min-blob-area must be >= 1")
+    if not (0 <= args.luminance_threshold <= 254):
+        parser.error("--luminance-threshold must be between 0 and 254")
     if args.padding < 0:
         parser.error("--padding must be >= 0")
 
     print(f"Scanning '{args.video}' for lightning frames...")
     print(
-        f"Settings: brightness_threshold={args.brightness_threshold}, "
-        f"pixel_ratio={args.pixel_ratio}, padding={args.padding}\n"
+        f"Settings: diff_threshold={args.diff_threshold}, "
+        f"min_blob_area={args.min_blob_area}, "
+        f"luminance_threshold={args.luminance_threshold}, "
+        f"padding={args.padding}\n"
     )
 
     hit_frames, total_frames, fps = detect_lightning(
         video_path=args.video,
-        brightness_threshold=args.brightness_threshold,
-        pixel_ratio=args.pixel_ratio,
+        diff_threshold=args.diff_threshold,
+        min_blob_area=args.min_blob_area,
+        luminance_threshold=args.luminance_threshold,
     )
 
     print(f"\nVideo: {total_frames} frames @ {fps:.3f} fps")
