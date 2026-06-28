@@ -1,0 +1,112 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "boltseeker"
+dynamic = ["version"]
+description = 'boltseeker is a command line tool to extract frames with lightning bolts from videos.'
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = [
+  'cli',
+  'command-line-tool',
+  'image-detection',
+  'video-processing',
+  'python-package'
+]
+authors = [
+  { name = "Ramiro Gómez", email = "code@ramiro.org" },
+]
+dependencies = [
+  "opencv-python",
+  "numpy",
+]
+
+[project.scripts]
+boltseeker = "boltseeker.boltseeker:main"
+
+[project.urls]
+Documentation = "https://github.com/yaph/boltseeker#readme"
+Issues = "https://github.com/yaph/boltseeker/issues"
+Source = "https://github.com/yaph/boltseeker"
+
+[tool.hatch.version]
+path = "boltseeker/__about__.py"
+
+[tool.hatch.envs.boltseeker-dev]
+builder = true
+extra-dependencies = ["flake8", "ipdb", "mypy>=1.0.0", "pytest"]
+
+[tool.hatch.envs.boltseeker-dev.env-vars]
+PYTHONBREAKPOINT = "ipdb.set_trace"
+
+[tool.hatch.envs.boltseeker-dev.scripts]
+type_check = "mypy --install-types --non-interactive {args:boltseeker tests}"
+clean = [
+  "rm -rf build",
+  "rm -rf dist",
+  "rm -rf boltseeker.egg-info",
+  "find . -type d -name '__pycache__' -prune",
+  "find . -name '*.pyc' -delete",
+  "find . -name '*.pyo' -delete",
+  "find . -name '*~' -delete",
+]
+qa = [
+  "hatch run type_check",
+  "hatch test",
+  "hatch fmt"
+]
+qax = [
+  "hatch run qa",
+  "skylos .",
+  "bandit --recursive boltseeker",
+  "bandit --skip B101 tests/",
+  "complexipy ."
+]
+release = [
+  "hatch run clean",
+  "bin/add_help_to_readme.py",
+  "git diff",
+  "hatch run qa",
+  "hatch build --clean",
+  "hatch publish",
+  "git tag -a $(hatch version) -m \"Create version $(hatch version)\"",
+  "git push --tags",
+  "git-changelog -o CHANGELOG.md",
+  "git commit -m 'Update CHANGELOG' CHANGELOG.md",
+  "git push"
+]
+test_release = [
+  "hatch run qa",
+  "hatch build --clean"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["boltseeker"]
+
+[tool.coverage.run]
+source_pkgs = ["boltseeker", "tests"]
+branch = true
+parallel = true
+omit = [
+  "boltseeker/__about__.py",
+]
+
+[tool.coverage.paths]
+boltseeker = ["boltseeker", "*/boltseeker/boltseeker"]
+tests = ["tests", "*/boltseeker/tests"]
+
+[tool.coverage.report]
+exclude_lines = [
+  "no cov",
+  "if __name__ == .__main__.:",
+  "if TYPE_CHECKING:",
+]
+
+[tool.ruff.lint]
+ignore = ["T201", "DTZ005", "FA100"]
+
+[tool.ruff.format]
+quote-style = "preserve"
