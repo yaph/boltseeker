@@ -17,6 +17,7 @@ def _blob_qualifies(
     gray: np.ndarray,
     min_blob_area: int,
     luminance_threshold: int,
+    mask_buffer: np.ndarray,
 ) -> bool:
     """Return True if a contour meets the area and luminance criteria.
 
@@ -25,15 +26,17 @@ def _blob_qualifies(
         gray: Grayscale frame the contour was extracted from.
         min_blob_area: Minimum contour area in pixels.
         luminance_threshold: Minimum mean luminance within the contour mask.
+        mask_buffer: Pre-allocated single-channel uint8 array the same size as gray,
+            cleared and reused on each call to avoid repeated heap allocations.
 
     Returns:
         True if the blob qualifies as a potential lightning region.
     """
     if cv2.contourArea(contour) < min_blob_area:
         return False
-    mask = np.zeros(gray.shape, dtype=np.uint8)
-    cv2.drawContours(mask, [contour], -1, 255, cv2.FILLED)
-    region_mean = float(cv2.mean(gray, mask=mask)[0])
+    mask_buffer[:] = 0
+    cv2.drawContours(mask_buffer, [contour], -1, 255, cv2.FILLED)
+    region_mean = float(cv2.mean(gray, mask=mask_buffer)[0])
     return region_mean >= luminance_threshold
 
 
@@ -72,9 +75,13 @@ def detect_lightning(
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
-        print("Warning: could not determine frame rate; timestamps will show 0.00s.",
+        print("Warning: could not determine frame rate; timestamps will show n/a.",
               file=sys.stderr)
         fps = 0.0
+
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    mask_buffer = np.zeros((height, width), dtype=np.uint8)
 
     hit_frames: list[int] = []
     frame_count = 0
@@ -85,7 +92,7 @@ def detect_lightning(
         if not ret:
             break
 
-        frame_idx = int(cap.get(cv2.CAP_PROP_POS_FRAMES)) - 1
+        frame_idx = frame_count
         frame_count += 1
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -97,18 +104,19 @@ def detect_lightning(
                 dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
             )
 
-            if any(_blob_qualifies(c, gray, min_blob_area, luminance_threshold)
-                   for c in contours):
+            if any(_blob_qualifies(c, gray, min_blob_area, luminance_threshold,
+                                   mask_buffer) for c in contours):
                 hit_frames.append(frame_idx)
-                if fps > 0:
-                    timestamp = f"{frame_idx / fps:7.2f}s"
-                else:
-                    timestamp = "    n/a"
+                timestamp = f"{frame_idx / fps:7.2f}s" if fps > 0 else "    n/a"
                 print(f"  Frame {frame_idx:6d} ({timestamp})")
 
         prev_gray = gray
 
     cap.release()
+
+    if frame_count == 0:
+        print("Warning: no frames could be read from the video.", file=sys.stderr)
+
     return hit_frames, frame_count, fps
 
 
