@@ -48,14 +48,12 @@ PYTHONBREAKPOINT = "ipdb.set_trace"
 
 [tool.hatch.envs.boltseeker-dev.scripts]
 type_check = "mypy --install-types --non-interactive {args:boltseeker tests}"
+[tool.hatch.envs.default.scripts]
 clean = [
-  "rm -rf build",
-  "rm -rf dist",
-  "rm -rf boltseeker.egg-info",
-  "find . -type d -name '__pycache__' -prune",
-  "find . -name '*.pyc' -delete",
-  "find . -name '*.pyo' -delete",
-  "find . -name '*~' -delete",
+  "rm -rf build dist *.egg-info .complexipy_cache .mypy_cache .pytest_cache .ruff_cache",
+  "find . -type d -name '__pycache__' -exec rm -rf {{}} +",
+  "find . -type d -regextype posix-extended -regex '.*/\\.[^/]*cache' -exec rm -rf {{}} +",
+  "find . -type f \\( -name '*.pyc' -o -name '*.pyo' -o -name '*~' \\) -delete"
 ]
 qa = [
   "hatch run type_check",
