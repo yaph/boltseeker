@@ -48,7 +48,7 @@ clean = [
   "rm -rf build",
   "rm -rf dist",
   "rm -rf boltseeker.egg-info",
-  "find . -type d -name '__pycache__' -prune",
+  "find . -type d -name '__pycache__' -exec rm -rf {} +",
   "find . -name '*.pyc' -delete",
   "find . -name '*.pyo' -delete",
   "find . -name '*~' -delete",

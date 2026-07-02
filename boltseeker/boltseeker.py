@@ -172,7 +172,7 @@ def save_frames(
     print(f"\nSaved {saved} frames to '{output_dir}/'")
 
 
-def main() -> None:
+def main(args=None) -> None:
     parser = argparse.ArgumentParser(
         prog='boltseeker',
         description='Detect and extract lightning frames from a storm video.',
@@ -228,39 +228,39 @@ def main() -> None:
         help='Detect only; do not write any image files.',
     )
 
-    args = parser.parse_args()
+    argv = parser.parse_args(args)
 
-    if not args.video.is_file():
-        parser.error(f"file not found: '{args.video}'")
-    if args.min_blob_area < 1:
+    if not argv.video.is_file():
+        parser.error(f"file not found: '{argv.video}'")
+    if argv.min_blob_area < 1:
         parser.error('--min-blob-area must be >= 1')
-    if args.padding < 0:
+    if argv.padding < 0:
         parser.error('--padding must be >= 0')
 
-    print(f"Scanning '{args.video}' for lightning frames...")
+    print(f"Scanning '{argv.video}' for lightning frames...")
     print(
-        f'Settings: diff_threshold={args.diff_threshold}, '
-        f'min_blob_area={args.min_blob_area}, '
-        f'luminance_threshold={args.luminance_threshold}, '
-        f'padding={args.padding}\n'
+        f'Settings: diff_threshold={argv.diff_threshold}, '
+        f'min_blob_area={argv.min_blob_area}, '
+        f'luminance_threshold={argv.luminance_threshold}, '
+        f'padding={argv.padding}\n'
     )
 
     hit_frames, total_frames, fps = detect_lightning(
-        video_path=args.video,
-        diff_threshold=args.diff_threshold,
-        min_blob_area=args.min_blob_area,
-        luminance_threshold=args.luminance_threshold,
+        video_path=argv.video,
+        diff_threshold=argv.diff_threshold,
+        min_blob_area=argv.min_blob_area,
+        luminance_threshold=argv.luminance_threshold,
     )
 
     print(f'\nVideo: {total_frames} frames @ {fps:.3f} fps')
     print(f'Detected {len(hit_frames)} lightning frame(s).')
 
-    if not args.no_save:
+    if not argv.no_save:
         save_frames(
-            video_path=args.video,
+            video_path=argv.video,
             hit_frames=hit_frames,
-            output_dir=args.output_dir,
-            padding=args.padding,
+            output_dir=argv.output_dir,
+            padding=argv.padding,
             total_frames=total_frames,
         )
     else:
