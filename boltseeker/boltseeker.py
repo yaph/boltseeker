@@ -75,8 +75,7 @@ def detect_lightning(
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     if fps <= 0:
-        print("Warning: could not determine frame rate; timestamps will show n/a.",
-              file=sys.stderr)
+        print('Warning: could not determine frame rate; timestamps will show n/a.', file=sys.stderr)
         fps = 0.0
 
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -100,22 +99,19 @@ def detect_lightning(
             diff = cv2.absdiff(gray, prev_gray)
             _, thresh = cv2.threshold(diff, diff_threshold, 255, cv2.THRESH_BINARY)
             dilated = cv2.dilate(thresh, _DILATION_KERNEL, iterations=2)
-            contours, _ = cv2.findContours(
-                dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
+            contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            if any(_blob_qualifies(c, gray, min_blob_area, luminance_threshold,
-                                   mask_buffer) for c in contours):
+            if any(_blob_qualifies(c, gray, min_blob_area, luminance_threshold, mask_buffer) for c in contours):
                 hit_frames.append(frame_idx)
-                timestamp = f"{frame_idx / fps:7.2f}s" if fps > 0 else "    n/a"
-                print(f"  Frame {frame_idx:6d} ({timestamp})")
+                timestamp = f'{frame_idx / fps:7.2f}s' if fps > 0 else '    n/a'
+                print(f'  Frame {frame_idx:6d} ({timestamp})')
 
         prev_gray = gray
 
     cap.release()
 
     if frame_count == 0:
-        print("Warning: no frames could be read from the video.", file=sys.stderr)
+        print('Warning: no frames could be read from the video.', file=sys.stderr)
 
     return hit_frames, frame_count, fps
 
@@ -137,7 +133,7 @@ def save_frames(
         total_frames: Total number of frames in the video, used to clamp indices.
     """
     if not hit_frames:
-        print("No frames to save.")
+        print('No frames to save.')
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -163,10 +159,10 @@ def save_frames(
         ret, frame = cap.read()
         current_pos = idx
         if not ret:
-            print(f"  Warning: could not read frame {idx}", file=sys.stderr)
+            print(f'  Warning: could not read frame {idx}', file=sys.stderr)
             continue
-        label = "lightning" if idx in hit_set else "padding"
-        out_path = output_dir / f"frame_{idx:06d}_{label}.jpg"
+        label = 'lightning' if idx in hit_set else 'padding'
+        out_path = output_dir / f'frame_{idx:06d}_{label}.jpg'
         if not cv2.imwrite(str(out_path), frame):
             print(f"  Warning: failed to write '{out_path}'", file=sys.stderr)
         else:
@@ -178,75 +174,75 @@ def save_frames(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="boltseeker",
-        description="Detect and extract lightning frames from a storm video.",
+        prog='boltseeker',
+        description='Detect and extract lightning frames from a storm video.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("video", type=Path, help="Path to the input video file.")
+    parser.add_argument('video', type=Path, help='Path to the input video file.')
     parser.add_argument(
-        "-o",
-        "--output-dir",
+        '-o',
+        '--output-dir',
         type=Path,
-        default=Path("lightning_frames"),
-        help="Directory to save extracted frames.",
+        default=Path('lightning_frames'),
+        help='Directory to save extracted frames.',
     )
     parser.add_argument(
-        "-d",
-        "--diff-threshold",
+        '-d',
+        '--diff-threshold',
         type=int,
+        choices=range(255),
         default=25,
-        help="Minimum per-pixel absolute difference (0-254) between consecutive frames "
-             "to count a pixel as changed. Raise this to ignore gradual changes "
-             "like slow cloud movement or rain.",
+        metavar='DIFF_THRESHOLD',
+        help='Minimum per-pixel absolute difference (0-254) between consecutive frames '
+        'to count a pixel as changed. Raise this to ignore gradual changes '
+        'like slow cloud movement or rain.',
     )
     parser.add_argument(
-        "-a",
-        "--min-blob-area",
+        '-a',
+        '--min-blob-area',
         type=int,
         default=500,
-        help="Minimum area in pixels of a connected changed region to consider. "
-             "Raise this to filter out small transient changes like raindrops or noise.",
+        help='Minimum area in pixels of a connected changed region to consider. '
+        'Raise this to filter out small transient changes like raindrops or noise.',
     )
     parser.add_argument(
-        "-l",
-        "--luminance-threshold",
+        '-l',
+        '--luminance-threshold',
         type=int,
+        choices=range(255),
         default=80,
+        metavar='LUMINANCE_THRESHOLD',
         help="Minimum mean luminance (0-254) within a blob's contour mask in the "
-             "current frame. Filters out dark blobs caused by cloud or rain movement.",
+        'current frame. Filters out dark blobs caused by cloud or rain movement.',
     )
     parser.add_argument(
-        "-p",
-        "--padding",
+        '-p',
+        '--padding',
         type=int,
         default=1,
-        help="Extra frames to save before/after each hit (>= 0). Ignored with --no-save.",
+        help='Extra frames to save before/after each hit (>= 0). Ignored with --no-save.',
     )
     parser.add_argument(
-        "--no-save",
-        action="store_true",
-        help="Detect only; do not write any image files.",
+        '--no-save',
+        action='store_true',
+        help='Detect only; do not write any image files.',
     )
 
     args = parser.parse_args()
 
     if not args.video.is_file():
         parser.error(f"file not found: '{args.video}'")
-    if not (0 <= args.diff_threshold <= 254):
-        parser.error("--diff-threshold must be between 0 and 254")
     if args.min_blob_area < 1:
-        parser.error("--min-blob-area must be >= 1")
-    if not (0 <= args.luminance_threshold <= 254):
-        parser.error("--luminance-threshold must be between 0 and 254")
+        parser.error('--min-blob-area must be >= 1')
     if args.padding < 0:
-        parser.error("--padding must be >= 0")
+        parser.error('--padding must be >= 0')
 
     print(f"Scanning '{args.video}' for lightning frames...")
     print(
-        f"Settings: diff_threshold={args.diff_threshold}, "
-        f"min_blob_area={args.min_blob_area}, "
-        f"luminance_threshold={args.luminance_threshold}, "
-        f"padding={args.padding}\n"
+        f'Settings: diff_threshold={args.diff_threshold}, '
+        f'min_blob_area={args.min_blob_area}, '
+        f'luminance_threshold={args.luminance_threshold}, '
+        f'padding={args.padding}\n'
     )
 
     hit_frames, total_frames, fps = detect_lightning(
@@ -256,8 +252,8 @@ def main() -> None:
         luminance_threshold=args.luminance_threshold,
     )
 
-    print(f"\nVideo: {total_frames} frames @ {fps:.3f} fps")
-    print(f"Detected {len(hit_frames)} lightning frame(s).")
+    print(f'\nVideo: {total_frames} frames @ {fps:.3f} fps')
+    print(f'Detected {len(hit_frames)} lightning frame(s).')
 
     if not args.no_save:
         save_frames(
@@ -268,8 +264,8 @@ def main() -> None:
             total_frames=total_frames,
         )
     else:
-        print("--no-save set; skipping image extraction.")
+        print('--no-save set; skipping image extraction.')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

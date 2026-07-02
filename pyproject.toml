@@ -109,4 +109,5 @@ exclude_lines = [
 ignore = ["T201", "DTZ005", "FA100"]
 
 [tool.ruff.format]
-quote-style = "preserve"
+quote-style = "single"
+docstring-code-format = true
