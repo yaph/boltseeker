@@ -12,9 +12,13 @@ license = "MIT"
 keywords = [
   'cli',
   'command-line-tool',
+  'computer-vision',
+  'frame-extraction',
   'image-detection',
+  'lightning',
+  'opencv',
+  'python-package',
   'video-processing',
-  'python-package'
 ]
 authors = [
   { name = "Ramiro Gómez", email = "code@ramiro.org" },
